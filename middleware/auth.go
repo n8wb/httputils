@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/whiteblock/httputils/responses"
 
@@ -12,7 +13,7 @@ import (
 	"github.com/whiteblock/utility/auth"
 )
 
-func AuthN(log logrus.Ext1FieldLogger, verifier *oidc.IDTokenVerifier) func(next http.Handler) http.Handler {
+func AuthN(log logrus.Ext1FieldLogger, verifier *oidc.IDTokenVerifier, to time.Duration) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/health") {
@@ -25,7 +26,9 @@ func AuthN(log logrus.Ext1FieldLogger, verifier *oidc.IDTokenVerifier) func(next
 				responses.MissingToken(w)
 				return
 			}
-			token, err := auth.VerifyToken(verifier, r.Context(), header)
+			ctx, cancel := context.WithTimeout(r.Context(), to)
+			defer cancel()
+			token, err := auth.VerifyToken(verifier, ctx, header)
 			if err != nil {
 				log.Error(err)
 				responses.InvalidToken(w)
@@ -39,7 +42,7 @@ func AuthN(log logrus.Ext1FieldLogger, verifier *oidc.IDTokenVerifier) func(next
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), "UserContext", userContext)
+			ctx = context.WithValue(r.Context(), "UserContext", userContext)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
